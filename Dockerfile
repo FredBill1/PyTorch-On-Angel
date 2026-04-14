@@ -75,22 +75,35 @@ RUN pip install --no-cache-dir -f https://download.pytorch.org/whl/torch_stable.
 ########################################################################################################################
 #                                                     JAVA BUILDER                                                     #
 ########################################################################################################################
-FROM dev AS java_builder
-
+RUN curl -fsSL --insecure -o /tmp/protobuf-2.5.0.tar.gz https://github.com/protocolbuffers/protobuf/releases/download/v2.5.0/protobuf-2.5.0.tar.gz \
+    && tar -xzf /tmp/protobuf-2.5.0.tar.gz -C /tmp \
+    && rm -rf /tmp/protobuf-2.5.0.tar.gz  \
+    && mv /tmp/protobuf-* /tmp/protobuf \
+    && cd /tmp/protobuf \
+    && ./configure \
+    && make -j$(nproc) \
+    && make install \
+    && rm -rf /tmp/protobuf
+ENV PATH=/usr/local/bin/:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 WORKDIR /app
+COPY ./angel /app/angel
+RUN --mount=type=cache,target=/root/.m2 \
+    curl -o /tmp/algs4.jar https://algs4.cs.princeton.edu/code/algs4.jar && \
+    mvn install:install-file -Dfile=/tmp/algs4.jar -DgroupId=edu.princeton.cs -DartifactId=algs4 -Dversion=1.0.4 -Dpackaging=jar && \
+    rm -f /tmp/algs4.jar && \
+    mvn install -q -e -B -Dmaven.test.skip=true -f /app/angel/pom.xml
 
-COPY ./java/pom.xml /app
+COPY ./pom.xml /app/pytorch-on-angel/pom.xml
+COPY ./java /app/pytorch-on-angel/java
+COPY ./examples /app/pytorch-on-angel/examples
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn install -q -e -B -Dmaven.test.skip=true -f /app/pytorch-on-angel/pom.xml
 
-RUN mvn -e -B dependency:resolve dependency:resolve-plugins
-
-COPY ./java /app
-
-RUN mvn -e -B -Dmaven.test.skip=true package
 ########################################################################################################################
 #                                                     CPP BUILDER                                                      #
 ########################################################################################################################
-FROM dev AS cpp_builder
 
 WORKDIR /app
 
@@ -108,8 +121,8 @@ RUN ./build.sh \
 FROM alpine:3.10 AS artifacts
 
 WORKDIR /dist
-COPY --from=cpp_builder /torch.zip ./
-COPY --from=java_builder /app/target/*.jar ./
+COPY --from=dev /torch.zip ./
+COPY --from=dev /app/target/*.jar ./
 
 VOLUME /output
 

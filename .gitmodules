@@ -1,0 +1,6 @@
+[submodule "cpp/pytorch_scatter-2.1.2"]
+	path = cpp/pytorch_scatter-2.1.2
+	url = https://github.com/rusty1s/pytorch_scatter.git
+[submodule "angel"]
+	path = angel
+	url = https://github.com/FredBill1/angel.git
