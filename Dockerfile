@@ -1,17 +1,25 @@
 ########################################################################################################################
 #                                                       DEV                                                            #
 ########################################################################################################################
-FROM maven:3.6.1-jdk-8 as DEV
+FROM maven:3.6.1-jdk-8 AS dev
 
 ##########################
 #  install dependencies  #
 ##########################
-RUN apt-get update \
+
+RUN sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list && \
+    sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list && \
+    sed -i '/stretch-updates/d' /etc/apt/sources.list && \
+    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until && \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
-       curl=7.52.1-5+deb9u9 \
-       g++=4:6.3.0-4 \
-       make=4.1-9.1 \
-       unzip=6.0-21+deb9u1 \
+    curl=7.52.1-5+deb9u9 \
+    g++=4:6.3.0-4 \
+    make=4.1-9.1 \
+    unzip=6.0-21+deb9u1 \
+    zip=3.0-11+b1 \
+    libjpeg-dev \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 #######################
@@ -49,20 +57,25 @@ RUN curl -fsSL --insecure -o anaconda.sh https://repo.anaconda.com/miniconda/Min
     && echo ". /opt/conda/etc/profile.d/conda.sh" >> "$HOME"/.bashrc \
     && echo "conda activate base" >> "$HOME"/.bashrc
 
-ENV PATH /opt/conda/bin/:$PATH
+ENV PATH=/opt/conda/bin/:$PATH
 
-RUN /opt/conda/bin/conda install -yq \
-      -c pytorch \
-      pytorch=1.5.0 \
-      torchvision=0.6.0 \
-      cpuonly=1.0  \
-    && /opt/conda/bin/conda clean -yq --all
+RUN pip install --no-cache-dir -f https://download.pytorch.org/whl/torch_stable.html \
+    torch==1.5.0+cpu \
+    torchvision==0.6.0+cpu \
+    black==23.3.0 \
+    isort==5.11.5 \
+    typing-extensions==4.7.1 \
+    numpy==1.21.6 \
+    scikit-learn==1.0.2 \
+    pandas==1.3.5 \
+    matplotlib==3.5.3 \
+    tqdm==4.67.3
 
 
 ########################################################################################################################
 #                                                     JAVA BUILDER                                                     #
 ########################################################################################################################
-FROM DEV as JAVA_BUILDER
+FROM dev AS java_builder
 
 
 WORKDIR /app
@@ -77,12 +90,7 @@ RUN mvn -e -B -Dmaven.test.skip=true package
 ########################################################################################################################
 #                                                     CPP BUILDER                                                      #
 ########################################################################################################################
-FROM DEV as CPP_BUILDER
-
-RUN apt-get update  \
-    && apt-get install -y --no-install-recommends \
-       zip=3.0-11+b1 \
-    && rm -rf /var/lib/apt/lists/*
+FROM dev AS cpp_builder
 
 WORKDIR /app
 
@@ -97,11 +105,11 @@ RUN ./build.sh \
 ########################################################################################################################
 #                                                       Artifacts                                                      #
 ########################################################################################################################
-FROM alpine:3.10 as ARTIFACTS
+FROM alpine:3.10 AS artifacts
 
 WORKDIR /dist
-COPY --from=CPP_BUILDER /torch.zip ./
-COPY --from=JAVA_BUILDER /app/target/*.jar ./
+COPY --from=cpp_builder /torch.zip ./
+COPY --from=java_builder /app/target/*.jar ./
 
 VOLUME /output
 
